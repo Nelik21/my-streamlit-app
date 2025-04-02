@@ -82,128 +82,66 @@ if st.session_state.validated:
     if selected_rep == "Client table":
         
         df = st.session_state.dataframe_cleaned
-        col_of_interest = ['Executed Tickets', 'Executed Volume (M)', 'Attempted Tickets',
-       'Attempted Volume (M)', 'Percentage Hit Ratio Tickets',
-       'Percentage Hit Ratio Volume']
-        selected_rep = st.selectbox("Choose a client :", st.session_state.client)      
-        selected = df.loc()[selected_rep,col_of_interest]
-        st.dataframe(selected) 
+        
+        col_of_interest = ['Executed Tickets', 'Executed Volume (M)', 'Attempted Tickets','Attempted Volume (M)', 'Percentage Hit Ratio Tickets','Percentage Hit Ratio Volume']
         
         col_participation = ["Executed Tickets %","Executed Volume %","Attempted Tickets %","Attempted Volume %"]
-        participation = df.loc()[selected_rep,col_participation]
         
-        col1, col2 = st.columns([4, 2])
+        col1, col2 = st.columns([50,50])
         
         
-        with col2:
-            
-            st.subheader("🧩 Graphiques")
-            selected_names = st.multiselect("Choisissez des noms :", options=st.session_state.sales)
-            st.write("Noms sélectionnés :", selected_names)
-            
         with col1:
             
-            new_col = ['Executed Tickets', 'Executed Volume', 'Attempted Tickets', 'Attempted Volume']
-            df_client = pd.DataFrame([],index = selected_names,columns=new_col)
             
-            existing_ones = list(set(selected.index).intersection(selected_names))                         
-            df_client.loc[existing_ones,new_col] = participation.loc[existing_ones,col_participation].values
-            df_client = df_client.fillna(0)
+            st.subheader("Client")
+            selected_clients = st.multiselect("Choisissez des noms :", options=st.session_state.client)
+              
+        with col2:
             
-            executed_tickets = st.checkbox("Executed Tickets")
-            executed_volume = st.checkbox("Executed Volume")
-            attempted_tickets = st.checkbox("Attempted Tickets")
-            attempted_volume = st.checkbox('Attempted Volume')        
+            st.subheader("Sales")
+            selected_names = st.multiselect("Choisissez des noms :", options=st.session_state.sales)            
+               
+        df = st.session_state.dataframe_cleaned
+        col_interest = ['Executed Tickets', 'Executed Volume (M)', 'Attempted Tickets', 'Attempted Volume (M)']
         
+        index = pd.MultiIndex.from_product([selected_clients, selected_names], names=["Client", "Sales"])
+        df_ = pd.DataFrame(0, index=index, columns=df.columns)
         
-            if executed_tickets:
-                
-                column_name = "Executed Tickets"
-                scope = df_client.loc()[:,column_name]
-                
-                fig = go.Figure(data=[go.Bar(name=f"Sales {selected_rep}", x=scope.index, y=scope.values, marker_color='skyblue')])
-                fig.update_layout(xaxis_tickangle=-45)  # Incline les labels
-                fig.update_layout(barmode='group',title=f"Top Clients - Sales {selected_rep} vs Total",xaxis_title="Client",
-                                  yaxis_title=column_name,xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                
-                
-            if executed_volume:
-                
-                column_name = 'Executed Volume'
-                scope = df_client.loc()[:,column_name]
-                
-                fig = go.Figure(data=[go.Bar(name=f"Sales {selected_rep}", x=scope.index, y=scope.values, marker_color='skyblue')])
-                fig.update_layout(xaxis_tickangle=-45)  # Incline les labels
-                fig.update_layout(barmode='group',title=f"Top Clients - Sales {selected_rep} vs Total",xaxis_title="Client",
-                                  yaxis_title=column_name,xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                
-                
-            if attempted_tickets:
-                
-                column_name = 'Attempted Tickets'
-                scope = df_client.loc()[:,column_name]
-                
-                fig = go.Figure(data=[go.Bar(name=f"Sales {selected_rep}", x=scope.index, y=scope.values, marker_color='skyblue')])
-                fig.update_layout(xaxis_tickangle=-45)  # Incline les labels
-                fig.update_layout(barmode='group',title=f"Top Clients - Sales {selected_rep} vs Total",xaxis_title="Client",
-                                  yaxis_title=column_name,xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                
-                
-            if attempted_volume:
-                
-                column_name = 'Attempted Volume'
-                scope = df_client.loc()[:,column_name]
-                
-                fig = go.Figure(data=[go.Bar(name=f"Sales {selected_rep}", x=scope.index, y=scope.values, marker_color='skyblue')])
-                fig.update_layout(xaxis_tickangle=-45)  # Incline les labels
-                fig.update_layout(barmode='group',title=f"Top Clients - Sales {selected_rep} vs Total",xaxis_title="Client",
-                                  yaxis_title=column_name,xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
+        try:
+            idx = pd.IndexSlice[selected_clients,selected_names]
+            subset = df.loc[idx, :]
+            df_.update(subset)
+        except:
+            pass
         
+        st.dataframe(df_)
         
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
+        graph = st.selectbox("Graph", col_interest)
+    
+        df_unstacked = df_[graph].unstack(fill_value=0)
+
+        # Construction du graphique Plotly
+        fig = go.Figure()
+
+        for sales in df_unstacked.columns:
+            fig.add_bar(
+                name=sales,
+                x=df_unstacked.index,
+                y=df_unstacked[sales]
+            )
+
+        # Configuration de l’empilement
+        fig.update_layout(
+            barmode='stack',  # => bar chart empilé
+            title="Tickets exécutés par Client et Sales",
+            xaxis_title="Client",
+            yaxis_title="Executed Tickets",
+            legend_title="Sales",
+            height=600
+        )
+
+        st.plotly_chart(fig, use_container_width=True)     
+
         
     elif selected_rep == "Sales table":
         
