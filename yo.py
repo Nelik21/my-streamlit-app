@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import random
+import plotly.colors as pc
 
 def data_process(x):
     
@@ -22,7 +25,6 @@ def data_process(x):
     
     output.replace("N.A.", 0, inplace=True)
     return output
-    
     
 
 st.title("Desk viewer")
@@ -91,15 +93,14 @@ if st.session_state.validated:
         
         
         with col1:
-            
-            
+                       
             st.subheader("Client")
-            selected_clients = st.multiselect("Choisissez des noms :", options=st.session_state.client)
+            selected_clients = st.multiselect("Choisissez des noms :", options=sorted(st.session_state.client))
               
         with col2:
             
             st.subheader("Sales")
-            selected_names = st.multiselect("Choisissez des noms :", options=st.session_state.sales)            
+            selected_names = st.multiselect("Choisissez des noms :", options=sorted(st.session_state.sales))            
                
         df = st.session_state.dataframe_cleaned
         col_interest = ['Executed Tickets', 'Executed Volume (M)', 'Attempted Tickets', 'Attempted Volume (M)']
@@ -114,110 +115,99 @@ if st.session_state.validated:
         except:
             pass
         
-        st.dataframe(df_)
+        #st.dataframe(df_)
         
         graph = st.selectbox("Graph", col_interest)
-    
-        df_unstacked = df_[graph].unstack(fill_value=0)
-
-        # Construction du graphique Plotly
-        fig = go.Figure()
-
-        for sales in df_unstacked.columns:
-            fig.add_bar(
-                name=sales,
-                x=df_unstacked.index,
-                y=df_unstacked[sales]
-            )
-
-        # Configuration de l’empilement
-        fig.update_layout(
-            barmode='stack',  # => bar chart empilé
-            title="Tickets exécutés par Client et Sales",
-            xaxis_title="Client",
-            yaxis_title="Executed Tickets",
-            legend_title="Sales",
-            height=600
-        )
-
-        st.plotly_chart(fig, use_container_width=True)     
-
+        st.dataframe(df_)
+        set_colors = pc.qualitative.Safe
+        color_map = {sales: set_colors[i % len(set_colors)] for i, sales in enumerate(selected_names)}
         
+        try:
+            df_unstacked = df_[graph].unstack(fill_value=0)
+        except:
+            df_unstacked =pd.DataFrame([],index=index, columns=df.columns)
+                    
+        fig = make_subplots(rows=1, cols=2, shared_yaxes=True,
+                            subplot_titles=("Per Sales (stacked)", "Total Client"))
+        
+        fig_prop = go.Figure()
+        totals = df[graph].unstack(fill_value=0).sum(1)[selected_clients]
+        
+        # Pour chaque client : stack manuellement ses sales dans l’ordre décroissant
+        for client in df_unstacked.index:
+            # Trier les sales de ce client localement
+            sorted_sales = df_unstacked.loc[client].sort_values(ascending=False)
+
+            for i, (sales, value) in enumerate(sorted_sales.items()):
+                
+                fig.add_trace(go.Bar(
+                    name=sales+" "+client, #if client == df_unstacked.index[0] else None,  # éviter légende répétée
+                    x=[client],
+                    y=[value],
+                    marker_color=color_map.get(sales, "#888"),
+                    
+                    
+                ), row=1, col=1)
+                #showlegend=(client == df_unstacked.index[0]),
+
+                fig_prop.add_bar(
+                                name=sales+" "+client, #if client == df_unstacked.index[0] else None,  # éviter légende répétée
+                                x=[client],
+                                y=[value/totals[client]*100],
+                                
+                                marker_color=color_map.get(sales, "#888"),
+                                
+                            )
+                #showlegend=(client == df_unstacked.index[0]),
+                
+                
+        
+
+        fig.add_trace(go.Bar(
+            name="Total Client",
+            x=totals[df_unstacked.index].index,
+            y=totals[df_unstacked.index].values,
+            marker_color="#1f77b4"
+        ), row=1, col=2)                
+                
+                
+
+        fig_prop.update_layout(
+            barmode='stack',
+            title_text=f"Participation of {graph} in %",
+            height=600,
+            xaxis_tickangle=-45
+        ) 
+        
+        
+        fig.update_layout(
+            barmode='stack',
+            title_text=f"Sales vs Total of {graph} per client",
+            height=600,
+            xaxis_tickangle=-45
+        ) 
+        
+        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig_prop, use_container_width=True)
+
     elif selected_rep == "Sales table":
         
         df = st.session_state.dataframe_cleaned.swaplevel(0, 1).sort_index()
         col_of_interest = ['Executed Tickets', 'Executed Volume (M)', 'Attempted Tickets',
-       'Attempted Volume (M)', 'Percentage Hit Ratio Tickets',
-       'Percentage Hit Ratio Volume']
-        selected_rep = st.selectbox("Choose a sales :", st.session_state.sales)      
+       'Attempted Volume (M)']
+        selected_rep = st.selectbox("Choose a sales :", sorted(st.session_state.sales))      
         selected = df.loc()[selected_rep,col_of_interest]
         st.dataframe(selected)
         
-        
-        col1, col2 = st.columns([3, 1])
-        
-        with col2:
-            
-            st.subheader("🧩 Graphiques")
-            executed_tickets = st.checkbox("Top Executed Tickets")
-            executed_volume = st.checkbox("Top Executed Volume")
-            attempted_tickets = st.checkbox("Top Attempted Tickets")
-            attempted_volume = st.checkbox('Top Attempted Volume')
+        graph = st.selectbox("View:", col_of_interest)
 
+        column_name = graph
+        scope = df.loc()[selected_rep,column_name].sort_values(ascending=False).iloc()[:10]
+        tot = st.session_state.total_client.loc()[scope.index,column_name]
+        fig = go.Figure(data=[go.Bar(name=f"Sales {selected_rep}", x=scope.index, y=scope.values, marker_color='skyblue'),
+                              go.Bar(name="Total Client", x=tot.index, y=tot.values, marker_color='crimson')])
+        fig.update_layout(xaxis_tickangle=-45)  # Incline les labels
+        fig.update_layout(barmode='group',title=f"Top Clients - Sales {selected_rep} vs Total",xaxis_title="Client",
+                          yaxis_title=column_name,xaxis_tickangle=-45)
+        st.plotly_chart(fig, use_container_width=True)
         
-        with col1:
-            st.subheader("📈 Visualisation")
-
-            if executed_tickets:
-                
-                column_name = "Executed Tickets"
-                scope = df.loc()[selected_rep,column_name].sort_values(ascending=False).iloc()[:10]
-                tot = st.session_state.total_client.loc()[scope.index,column_name]
-                fig = go.Figure(data=[go.Bar(name=f"Sales {selected_rep}", x=scope.index, y=scope.values, marker_color='skyblue'),
-                                      go.Bar(name="Total Client", x=tot.index, y=tot.values, marker_color='crimson')])
-                fig.update_layout(xaxis_tickangle=-45)  # Incline les labels
-                fig.update_layout(barmode='group',title=f"Top Clients - Sales {selected_rep} vs Total",xaxis_title="Client",
-                                  yaxis_title=column_name,xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                
-                
-            if executed_volume:
-                
-                column_name = 'Executed Volume (M)'
-                scope = df.loc()[selected_rep,column_name].sort_values(ascending=False).iloc()[:10]
-                tot = st.session_state.total_client.loc()[scope.index,column_name]
-                fig = go.Figure(data=[go.Bar(name=f"Sales {selected_rep}", x=scope.index, y=scope.values, marker_color='skyblue'),
-                                      go.Bar(name="Total Client", x=tot.index, y=tot.values, marker_color='crimson')])
-                fig.update_layout(xaxis_tickangle=-45)  # Incline les labels
-                fig.update_layout(barmode='group',title=f"Top Clients - Sales {selected_rep} vs Total",xaxis_title="Client",
-                                  yaxis_title=column_name,xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                
-                
-            if attempted_tickets:
-                
-                column_name = 'Attempted Tickets'
-                scope = df.loc()[selected_rep,column_name].sort_values(ascending=False).iloc()[:10]
-                tot = st.session_state.total_client.loc()[scope.index,column_name]
-                fig = go.Figure(data=[go.Bar(name=f"Sales {selected_rep}", x=scope.index, y=scope.values, marker_color='skyblue'),
-                                      go.Bar(name="Total Client", x=tot.index, y=tot.values, marker_color='crimson')])
-                fig.update_layout(xaxis_tickangle=-45)  # Incline les labels
-                fig.update_layout(barmode='group',title=f"Top Clients - Sales {selected_rep} vs Total",xaxis_title="Client",
-                                  yaxis_title=column_name,xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
-                
-                
-                
-            if attempted_volume:
-                
-                column_name = 'Attempted Volume (M)'
-                scope = df.loc()[selected_rep,column_name].sort_values(ascending=False).iloc()[:10]
-                tot = st.session_state.total_client.loc()[scope.index,column_name]
-                fig = go.Figure(data=[go.Bar(name=f"Sales {selected_rep}", x=scope.index, y=scope.values, marker_color='skyblue'),
-                                      go.Bar(name="Total Client", x=tot.index, y=tot.values, marker_color='crimson')])
-                fig.update_layout(xaxis_tickangle=-45)  # Incline les labels
-                fig.update_layout(barmode='group',title=f"Top Clients - Sales {selected_rep} vs Total",xaxis_title="Client",
-                                  yaxis_title=column_name,xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
